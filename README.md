@@ -22,6 +22,12 @@ Sockspring turns your Android device into a proxy for your other devices. Start 
 
 **Android 7.0+ · No ads · No analytics · No app account · MIT licensed**
 
+## Why Sockspring?
+
+Sockspring is my escape hatch when traveling. I want reliable internet for my laptop and other devices without hunting for Wi-Fi. An unlimited travel eSIM can cover my phone, while hotspot limits make sharing that connection harder.
+
+I built Sockspring to give my other devices another way to use that connection: a SOCKS5 proxy running on my phone. It is a small, practical tool for working around hotspot limitations with compatible clients. Your devices still need a network connection to the phone, and what works depends on the eSIM plan and carrier.
+
 ## A closer look
 
 <p align="center">
