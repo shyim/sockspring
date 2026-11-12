@@ -1,0 +1,17 @@
+{
+  "packageName": "de.shyim.sockspring",
+  "versionName": "1.0.0",
+  "versionCode": 1,
+  "publisher": "Shyim",
+  "defaultLanguage": "en-US",
+  "category": "TOOLS",
+  "appOrGame": "APP",
+  "containsAds": false,
+  "supportEmail": "socksspring@shyim.de",
+  "website": "https://github.com/shyim/sockspring",
+  "privacyPolicy": "https://github.com/shyim/sockspring/blob/main/PRIVACY.md",
+  "pricingRecommendation": "Free",
+  "countries": "Select in Play Console; not assumed",
+  "targetAudienceRecommendation": "18 and over; general networking utility, not designed for children",
+  "sourceLicense": "MIT"
+}

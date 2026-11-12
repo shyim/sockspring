@@ -1,0 +1,5 @@
+Meet Sockspring: a SOCKS5 proxy for your Android device.
+• Material 3 Expressive design with light and dark themes.
+• Live connection and traffic statistics.
+• Optional proxy authentication and advanced network controls.
+• Native Rust engine with TCP, UDP, and UDP-over-TCP support.

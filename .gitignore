@@ -1,0 +1,11 @@
+.gradle
+app/build
+
+native/target/
+local.properties
+__pycache__/
+build/
+
+.DS_Store
+.signing/
+upload-signing.properties

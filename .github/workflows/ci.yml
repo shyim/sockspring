@@ -1,0 +1,49 @@
+name: "CI"
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Build
+        run: |
+          sudo apt-get update -y && sudo apt-get install -y wget unzip file git openjdk-17-jdk
+          rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+          cargo install cargo-ndk --version 4.1.2 --locked
+          cargo test --manifest-path native/Cargo.toml --locked
+          cargo clippy --manifest-path native/Cargo.toml --locked --all-targets -- -D warnings
+          wget https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip
+          mkdir sdk
+          unzip -d sdk commandlinetools-linux-13114758_latest.zip
+          export ANDROID_HOME=`pwd`/sdk
+          export ANDROID_SDK_ROOT=`pwd`/sdk
+          export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+          yes | sdk/cmdline-tools/bin/sdkmanager --sdk_root=`pwd`/sdk --licenses
+          sdk/cmdline-tools/bin/sdkmanager --sdk_root=`pwd`/sdk 'platforms;android-37.0' 'build-tools;36.0.0' 'ndk;26.3.11579264'
+          ./gradlew assembleRelease bundleRelease lintRelease testDebugUnitTest
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            ref_name="pr-${{ github.event.pull_request.number }}"
+          else
+            ref_name="${{ github.ref_name }}"
+          fi
+          echo "ref_name=${ref_name}" >> $GITHUB_ENV
+          cp app/build/outputs/apk/release/app-release-unsigned.apk sockspring-${ref_name}-unsigned.apk
+          cp app/build/outputs/bundle/release/app-release.aab sockspring-${ref_name}-unsigned.aab
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: sockspring-${{ env.ref_name }}-unsigned
+          path: sockspring-${{ env.ref_name }}-unsigned.*
+          if-no-files-found: error
+          retention-days: 14

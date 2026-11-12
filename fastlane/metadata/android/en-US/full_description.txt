@@ -1,0 +1,31 @@
+Your phone. Your proxy.
+
+Sockspring turns your Android device into a SOCKS5 proxy server. Start the server, copy its local address, and configure a SOCKS5-compatible app on another device to connect.
+
+A clear view of your connections
+• Start and stop your proxy with one tap.
+• Copy or share the address your other devices need.
+• See active connections, transferred data, and session uptime.
+• Enjoy a Material 3 Expressive interface with light and dark themes.
+
+Set it up your way
+• Optional username and password authentication.
+• TCP, UDP, and compatible UDP-over-TCP clients.
+• IPv4 and IPv6 support.
+• Configurable listening address and port.
+• Advanced source address, interface, and worker settings.
+• A low-latency TCP option and optional startup after reboot.
+• An ongoing notification with a Stop action.
+
+Built to be open
+Sockspring is open source, with a native Rust networking engine. No ads, analytics, or app account. Settings stay on your device.
+
+Getting connected
+Your client device must be able to reach your phone over the network and must support SOCKS5. Configure the client's proxy address and port using the values shown in Sockspring. Whether clients can reach each other depends on your Wi-Fi or hotspot configuration and network restrictions.
+
+Sockspring is a proxy server, not a VPN service. It does not provide remote proxy servers or automatically route all device traffic. SOCKS5 does not encrypt traffic or proxy passwords; use a trusted network. HTTPS and other end-to-end encrypted connections retain their own encryption.
+
+Requires Android 7.0 or newer.
+
+Source: https://github.com/shyim/sockspring
+Support: socksspring@shyim.de
