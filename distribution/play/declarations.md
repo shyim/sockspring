@@ -23,7 +23,7 @@ Replace PHONE_ADDRESS with the app's displayed address. Client isolation or carr
 - In-app purchases/subscriptions: **None**.
 - App category: **Tools**. Suggested tags, if Console offers them: Network, Tools.
 - Government, news, health, financial services: **No**.
-- Target audience recommendation: **18 and over**; this is a networking utility, not designed or marketed for children. Publisher must select the intended audience.
+- Target audience: **13 and over**, selected by the publisher. Play Console age groups: **13–15, 16–17, and 18+**. This is separate from the IARC content rating.
 - Content rating: complete IARC honestly; do not manually claim an age rating before IARC assigns it. The app contains no authored violence, sexual content, gambling, social feed, chat, or user-uploaded public content. It forwards arbitrary client-requested Internet traffic, so review any questionnaire question about Internet access rather than treating it as a content filter/browser or claiming restricted destinations.
 
 ## Foreground service: FOREGROUND_SERVICE_SPECIAL_USE
@@ -61,6 +61,8 @@ Do not submit a placeholder video URL. Any local recording must be uploaded to a
 - No VPNService, location, camera, microphone, contacts, storage, accessibility, package-query or advertising ID access. Do not declare this as a VpnService app merely because it is a proxy.
 
 ## Data safety assessment — requires final publisher review
+
+Console preparation status (12 November 2026): the saved declaration currently answers **No** to collection or sharing. This is not a resolved assessment of proxy forwarding under Play's definitions; verify the interpretation below before production submission.
 
 **Do not equate “no developer backend” with “no off-device transmission.”** Google's definition covers data transmitted to third parties, and ephemeral handling can still require a form response. SOCKS5 can carry unencrypted traffic, so do not select “all collected data encrypted in transit.”
 
