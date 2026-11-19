@@ -51,7 +51,9 @@ traffic; use a trusted network or an encrypted tunnel where required.
 
 ## Performance testing
 
-The **Low-latency TCP** switch controls TCP_NODELAY. Measure with your own
+The **Low-latency TCP** switch controls TCP_NODELAY and, on Android/Linux, caps
+unsent data per socket at 16 KiB (TCP_NOTSENT_LOWAT) so a slow uplink pushes back
+on the sender instead of queueing stale data. Measure with your own
 clients and network before drawing performance conclusions.
 Stop the proxy, change the switch, save, and restart to compare configurations.
 

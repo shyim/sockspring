@@ -322,6 +322,16 @@ async fn negotiate(stream: &mut TcpStream, c: &Config) -> io::Result<(u8, Addres
         }
     }
 }
+// Without a cap on unsent bytes the kernel queues megabytes behind a slow link,
+// so calls and other real-time traffic arrive seconds late.
+fn tune(stream: &TcpStream, c: &Config) -> io::Result<()> {
+    stream.set_nodelay(c.tcp_nodelay)?;
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    if c.tcp_nodelay {
+        let _ = socket2::SockRef::from(stream).set_tcp_notsent_lowat(16 * 1024);
+    }
+    Ok(())
+}
 async fn connect_one(addr: SocketAddr, c: Arc<Config>) -> io::Result<TcpStream> {
     let ip = source(&c, addr.is_ipv4())?;
     let s = socket(ip, false, false)?;
@@ -329,7 +339,7 @@ async fn connect_one(addr: SocketAddr, c: Arc<Config>) -> io::Result<TcpStream> 
     s.bind(&SocketAddr::new(ip, 0).into())?;
     let tcp = tokio::net::TcpSocket::from_std_stream(s.into());
     let stream = tcp.connect(addr).await?;
-    stream.set_nodelay(c.tcp_nodelay)?;
+    tune(&stream, &c)?;
     Ok(stream)
 }
 async fn connect(target: &Address, c: Arc<Config>) -> io::Result<TcpStream> {
@@ -602,7 +612,7 @@ async fn write_udp(
     Ok(())
 }
 async fn session(mut stream: TcpStream, c: Arc<Config>, stats: Arc<Stats>) -> io::Result<()> {
-    stream.set_nodelay(c.tcp_nodelay)?;
+    tune(&stream, &c)?;
     let (cmd, target) = timeout(HANDSHAKE, negotiate(&mut stream, &c)).await??;
     match cmd {
         1 => tcp_relay(stream, target, c, stats).await,
