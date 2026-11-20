@@ -28,10 +28,10 @@ Replace PHONE_ADDRESS with the app's displayed address. Client isolation or carr
 
 ## Foreground service: FOREGROUND_SERVICE_SPECIAL_USE
 
-Use case: User-controlled SOCKS5 proxy server.
+Use case: User-controlled SOCKS5 proxy and WireGuard server.
 
 Functionality description:
-Sockspring hosts a SOCKS5 server on the user's Android device. The user starts it in the app and configures their other devices to connect. The foreground service accepts connections and relays TCP and UDP traffic while the app is in the background. A persistent notification identifies the active proxy and provides Stop. The app also provides Stop on its dashboard. Optional startup after reboot is explicitly enabled by the user and disabled by default.
+Sockspring hosts a SOCKS5 server and, if the user enables it, a WireGuard server on the user's Android device. The user starts it in the app and configures their other devices to connect. The foreground service accepts connections and relays TCP and UDP traffic while the app is in the background. A persistent notification identifies the active proxy and provides Stop. The app also provides Stop on its dashboard. Optional startup after reboot is explicitly enabled by the user and disabled by default.
 
 Impact if deferred:
 The proxy must be available immediately after the user starts it. Delaying startup causes the user's configured client connections to fail or time out.
@@ -54,11 +54,12 @@ Do not submit a placeholder video URL. Any local recording must be uploaded to a
 ## Other permissions
 
 - INTERNET: accept and forward user-requested network traffic.
+- ACCESS_NETWORK_STATE: read the active network's DNS servers so WireGuard devices can resolve names through the phone.
 - ACCESS_LOCAL_NETWORK: Android 17 runtime permission for clients on the local network; requested on Start, denial handled without starting.
 - POST_NOTIFICATIONS: display proxy status and a Stop action.
 - RECEIVE_BOOT_COMPLETED: optional user-enabled startup after reboot; off by default.
 - FOREGROUND_SERVICE / SPECIAL_USE: keep the user-enabled proxy session available.
-- No VPNService, location, camera, microphone, contacts, storage, accessibility, package-query or advertising ID access. Do not declare this as a VpnService app merely because it is a proxy.
+- No VPNService, location, camera, microphone, contacts, storage, accessibility, package-query or advertising ID access. Do not declare this as a VpnService app merely because it is a proxy. The WireGuard server runs inside the app process on an ordinary UDP socket; it does not use VpnService and does not route the phone's own traffic.
 
 ## Data safety assessment — requires final publisher review
 
@@ -68,7 +69,7 @@ Console preparation status (12 November 2026): the saved declaration currently a
 
 | Data / operation | Current behavior | Proposed treatment |
 | --- | --- | --- |
-| Saved settings and optional proxy credentials | App-private preferences; no cloud backup; never sent to Shyim | On-device processing, not declared as collection solely because it is stored locally |
+| Saved settings, optional proxy credentials and WireGuard device keys | App-private preferences; no cloud backup; never sent to Shyim | On-device processing, not declared as collection solely because it is stored locally |
 | Session counters | In-memory counts; no analytics endpoint | On-device processing |
 | Client IPs, requested destination names/addresses and payloads | Used to forward client requests and perform DNS; no traffic-history log or developer server | Review as off-device collection under the broad Play definition; destination/domain requests can fall under Web browsing history. Purpose: app functionality; required while proxying; local processing is ephemeral |
 | Third-party destination transfer | Only to destinations requested by configured clients | Proposed user-initiated transfer exception to “sharing”; document the user-directed proxy purpose. This exception does not automatically exempt collection |

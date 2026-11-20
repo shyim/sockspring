@@ -1,12 +1,12 @@
 # Sockspring privacy policy
 
-Effective date: November 12, 2026
+Effective date: November 20, 2026
 
-Sockspring (`de.shyim.sockspring`) is an open-source SOCKS5 proxy server for Android, published by **Shyim**. Contact: **socksspring@shyim.de**.
+Sockspring (`de.shyim.sockspring`) is an open-source SOCKS5 proxy and WireGuard server for Android, published by **Shyim**. Contact: **socksspring@shyim.de**.
 
 ## What the app does
 
-When you start the proxy, devices you configure to use it can send network requests through your Android device. Sockspring receives the client connection and forwards its traffic to the destination requested by that client. DNS lookups use the device's configured resolver. Destination services, DNS providers, and network operators handle this traffic under their own policies.
+When you start the proxy, devices you configure to use it can send network requests through your Android device. Sockspring receives the client connection and forwards its traffic to the destination requested by that client. This applies to SOCKS5 clients and to devices connected through the optional WireGuard server. DNS lookups, including DNS queries that WireGuard devices send to the tunnel address, use the device's configured resolver. Destination services, DNS providers, and network operators handle this traffic under their own policies.
 
 Shyim does not operate a proxy backend for this app. The app does not send traffic, browsing history, credentials, or usage statistics to Shyim. It has no advertising, analytics, crash-reporting SDK, or account system.
 
@@ -14,21 +14,21 @@ Shyim does not operate a proxy backend for this app. The app does not send traff
 
 The proxy processes client and destination IP addresses, domain names, ports, and network payloads in memory to route connections. It maintains temporary connection state and session traffic counters. It does not write a browsing-history or traffic-content log. Temporary connection state is discarded when connections end or the service stops; session counters reset when a new session starts.
 
-Your server settings, including an optional proxy username and password, are saved in app-private Android preferences. These credentials control access to your proxy; they are not a Shyim account. Preferences are not encrypted by the app. Android cloud backup and device-transfer backup are disabled for this data.
+Your server settings, including an optional proxy username and password, are saved in app-private Android preferences. These credentials control access to your proxy; they are not a Shyim account. If you use WireGuard, the server's key and the name, keys, and tunnel address of each device you add are saved the same way, so that a device's configuration can be shown again. While the server runs, the app keeps each WireGuard device's current network address, time of last handshake, and traffic counters in memory to show its connection status. Preferences are not encrypted by the app. Android cloud backup and device-transfer backup are disabled for this data.
 
-Copying or sharing the proxy address is optional. Copy places it on the system clipboard; Share sends it to the app or recipient you choose.
+Copying or sharing the proxy address or a WireGuard device configuration is optional. Copy places it on the system clipboard; Share sends it to the app or recipient you choose. A WireGuard configuration contains that device's private key.
 
 ## Permissions and background operation
 
-Internet and local-network access allow the proxy to accept and forward connections. A foreground service keeps a proxy session available while you use other apps. A notification shows that the server is active and offers a Stop action. Notification permission allows that notification to appear normally. The optional Start after reboot setting restarts the proxy after a device reboot; it is off by default.
+Internet and local-network access allow the proxy to accept and forward connections. Network-state access lets the app find the device's current DNS servers for WireGuard devices. A foreground service keeps a proxy session available while you use other apps. A notification shows that the server is active and offers a Stop action. Notification permission allows that notification to appear normally. The optional Start after reboot setting restarts the proxy after a device reboot; it is off by default.
 
 The app does not request access to your contacts, photos, microphone, camera, or precise location.
 
 ## Security and your choices
 
-SOCKS5 itself does not encrypt traffic or proxy usernames and passwords. Applications using end-to-end encryption, such as HTTPS, retain that encryption through the proxy. Use trusted networks and enable proxy authentication when appropriate. Sockspring is not a VPN and does not automatically route all device traffic.
+SOCKS5 itself does not encrypt traffic or proxy usernames and passwords. Applications using end-to-end encryption, such as HTTPS, retain that encryption through the proxy. Use trusted networks and enable proxy authentication when appropriate. WireGuard encrypts traffic only between a connected device and your Android device; from there it is forwarded like any other traffic. Sockspring is not a VPN service: it provides no remote servers and does not route your Android device's own traffic.
 
-You can stop forwarding at any time using Stop in the app or notification. Disable Start after reboot to prevent automatic startup. Clear the app's storage in Android settings or uninstall it to delete saved preferences. Shyim has no server-side app account or stored proxy data to delete.
+You can stop forwarding at any time using Stop in the app or notification. Remove a WireGuard device in the app to revoke its access. Disable Start after reboot to prevent automatic startup. Clear the app's storage in Android settings or uninstall it to delete saved preferences. Shyim has no server-side app account or stored proxy data to delete.
 
 ## Support and changes
 
