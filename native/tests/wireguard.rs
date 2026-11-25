@@ -321,14 +321,10 @@ impl Stack {
             &mut queue,
             smoltcp::time::Instant::ZERO,
         );
+        let client6 = CLIENT6.parse::<Ipv6Addr>().unwrap();
         iface.update_ip_addrs(|addrs| {
             addrs.push(IpCidr::new(CLIENT4.into(), 32)).unwrap();
-            addrs
-                .push(IpCidr::new(
-                    CLIENT6.parse::<Ipv6Addr>().unwrap().into(),
-                    128,
-                ))
-                .unwrap();
+            addrs.push(IpCidr::new(client6.into(), 128)).unwrap();
         });
         iface.routes_mut().add_default_ipv4_route(GATEWAY4).unwrap();
         iface
@@ -339,7 +335,16 @@ impl Stack {
             tcp::SocketBuffer::new(vec![0; 65536]),
             tcp::SocketBuffer::new(vec![0; 65536]),
         );
-        socket.connect(iface.context(), target, local_port).unwrap();
+        // For an IPv6 loopback destination, smoltcp would select ::1 as the
+        // source. Use the tunnel address authorized for this WireGuard peer.
+        let source = if target.is_ipv4() {
+            IpAddr::V4(CLIENT4)
+        } else {
+            IpAddr::V6(client6)
+        };
+        socket
+            .connect(iface.context(), target, SocketAddr::new(source, local_port))
+            .unwrap();
         let mut sockets = SocketSet::new(Vec::new());
         let handle = sockets.add(socket);
         Self {

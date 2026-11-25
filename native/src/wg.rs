@@ -272,11 +272,11 @@ fn parse_ip(p: &[u8]) -> Option<Ip<'_>> {
     }
 }
 fn sum(data: &[u8], mut acc: u32) -> u32 {
-    let mut chunks = data.chunks_exact(2);
-    for c in &mut chunks {
-        acc += u16::from_be_bytes([c[0], c[1]]) as u32;
+    let (words, remainder) = data.as_chunks::<2>();
+    for &word in words {
+        acc += u16::from_be_bytes(word) as u32;
     }
-    if let [last] = chunks.remainder() {
+    if let [last] = remainder {
         acc += (*last as u32) << 8;
     }
     acc
