@@ -1,4 +1,5 @@
-//! SOCKS5 transport. JNI is a control plane only; bytes stay in Rust.
+//! SOCKS5 and WireGuard transport. JNI is a control plane only; bytes stay in Rust.
+pub mod wg;
 use serde::{Deserialize, Serialize};
 use socket2::{Domain, Protocol, Socket, Type};
 use std::{
@@ -42,6 +43,8 @@ pub struct Config {
     pub interface: String,
     pub ipv6_only: bool,
     pub tcp_nodelay: bool,
+    pub socks: bool,
+    pub wireguard: wg::WgConfig,
 }
 impl Default for Config {
     fn default() -> Self {
@@ -58,6 +61,8 @@ impl Default for Config {
             interface: String::new(),
             ipv6_only: false,
             tcp_nodelay: true,
+            socks: true,
+            wireguard: wg::WgConfig::default(),
         }
     }
 }
@@ -97,7 +102,10 @@ impl Config {
             return Err(err("Invalid interface name"));
         }
         port_range(&self.udp_port)?;
-        Ok(())
+        if !self.socks && !self.wireguard.enabled {
+            return Err(err("Enable SOCKS5 or WireGuard"));
+        }
+        self.wireguard.validate()
     }
 }
 fn port_range(value: &str) -> io::Result<(u16, u16)> {
@@ -121,6 +129,7 @@ pub struct Stats {
     uploaded: AtomicU64,
     downloaded: AtomicU64,
     failures: AtomicU64,
+    peers: Mutex<Vec<wg::PeerStatus>>,
 }
 #[derive(Serialize)]
 struct Snapshot {
@@ -130,6 +139,7 @@ struct Snapshot {
     uploaded: u64,
     downloaded: u64,
     failures: u64,
+    peers: Vec<wg::PeerStatus>,
 }
 impl Stats {
     pub fn json(&self) -> String {
@@ -140,6 +150,7 @@ impl Stats {
             uploaded: self.uploaded.load(Ordering::Relaxed),
             downloaded: self.downloaded.load(Ordering::Relaxed),
             failures: self.failures.load(Ordering::Relaxed),
+            peers: self.peers.lock().map(|p| p.clone()).unwrap_or_default(),
         })
         .unwrap()
     }
@@ -629,32 +640,57 @@ pub async fn serve(
     mut stop: oneshot::Receiver<()>,
     ready: std::sync::mpsc::SyncSender<Result<(), String>>,
 ) -> io::Result<()> {
-    let listener = (|| {
+    let c = Arc::new(c);
+    let bound = (|| {
         c.validate()?;
-        let ip = c.listen.parse::<IpAddr>().map_err(|e| err(e.to_string()))?;
-        let s = socket(ip, false, c.ipv6_only)?;
-        s.set_reuse_address(true)?;
-        s.bind(&SocketAddr::new(ip, c.port).into())?;
-        s.listen(256)?;
-        TcpListener::from_std(s.into())
+        let listener = if c.socks {
+            let ip = c.listen.parse::<IpAddr>().map_err(|e| err(e.to_string()))?;
+            let s = socket(ip, false, c.ipv6_only)?;
+            s.set_reuse_address(true)?;
+            s.bind(&SocketAddr::new(ip, c.port).into())?;
+            s.listen(256)?;
+            Some(TcpListener::from_std(s.into())?)
+        } else {
+            None
+        };
+        let wireguard = if c.wireguard.enabled {
+            Some(wg::Server::bind(c.clone(), stats.clone())?)
+        } else {
+            None
+        };
+        Ok::<_, io::Error>((listener, wireguard))
     })();
-    let listener = match listener {
-        Ok(l) => l,
+    let (listener, wireguard) = match bound {
+        Ok(v) => v,
         Err(e) => {
             let _ = ready.send(Err(e.to_string()));
             return Err(e);
         }
     };
-    let c = Arc::new(c);
     let permits = Arc::new(Semaphore::new(512));
     let mut tasks = JoinSet::new();
+    let has_wireguard = wireguard.is_some();
+    let mut wireguard = tokio::spawn(async move {
+        match wireguard {
+            Some(server) => server.run().await,
+            None => std::future::pending().await,
+        }
+    });
     stats.running.store(true, Ordering::Relaxed);
     let _ = ready.send(Ok(()));
+    let accept = || async {
+        match &listener {
+            Some(l) => l.accept().await,
+            None => std::future::pending().await,
+        }
+    };
     loop {
         tokio::select! {
             _=&mut stop=>break,
+            // The tunnel only returns on a fatal error; stop instead of half-running.
+            _=&mut wireguard,if has_wireguard=>break,
             Some(_)=tasks.join_next(),if !tasks.is_empty()=>{},
-            result=listener.accept()=>{
+            result=accept()=>{
                 let (stream,_)=match result{Ok(v)=>v,Err(_)=>{tokio::time::sleep(Duration::from_millis(100)).await;continue;}};
                 let permit=match permits.clone().try_acquire_owned(){Ok(p)=>p,Err(_)=>{drop(stream);continue;}};
                 let c=c.clone();let stats=stats.clone();
@@ -664,6 +700,8 @@ pub async fn serve(
             }
         }
     }
+    wireguard.abort();
+    let _ = wireguard.await;
     tasks.abort_all();
     while tasks.join_next().await.is_some() {}
     stats.running.store(false, Ordering::Relaxed);
@@ -757,6 +795,31 @@ mod android {
         env.new_string(result.err().unwrap_or_default())
             .map(|s| s.into_raw())
             .unwrap_or(std::ptr::null_mut())
+    }
+    #[no_mangle]
+    pub extern "system" fn Java_de_shyim_sockspring_NativeBridge_publicKey(
+        mut env: JNIEnv,
+        _obj: JObject,
+        private: JString,
+    ) -> jstring {
+        let result = env
+            .get_string(&private)
+            .map(|s| String::from(s))
+            .map_err(|e| e.to_string())
+            .and_then(|s| wg::public_key(&s));
+        env.new_string(result.unwrap_or_default())
+            .map(|s| s.into_raw())
+            .unwrap_or(std::ptr::null_mut())
+    }
+    #[no_mangle]
+    pub extern "system" fn Java_de_shyim_sockspring_NativeBridge_setDns(
+        mut env: JNIEnv,
+        _obj: JObject,
+        servers: JString,
+    ) {
+        if let Ok(s) = env.get_string(&servers) {
+            wg::set_dns(&String::from(s));
+        }
     }
     #[no_mangle]
     pub extern "system" fn Java_de_shyim_sockspring_NativeBridge_stop(_env: JNIEnv, _obj: JObject) {

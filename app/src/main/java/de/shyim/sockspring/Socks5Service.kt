@@ -24,6 +24,24 @@ object NativeBridge {
     external fun stop()
 
     external fun snapshot(): String
+
+    /** Returns the base64 public key for a base64 private key, or "" if it is invalid. */
+    external fun publicKey(privateKey: String): String
+
+    /** Replaces the resolvers behind the WireGuard tunnel address while running. */
+    external fun setDns(servers: String)
+}
+
+data class PeerState(
+    val publicKey: String,
+    val endpoint: String,
+    val handshakeAge: Long,
+    val received: Long,
+    val sent: Long,
+) {
+    // WireGuard renews sessions every two minutes; three means the device left.
+    val connected
+        get() = handshakeAge in 0..180
 }
 
 data class ProxyState(
@@ -35,6 +53,7 @@ data class ProxyState(
     val downloaded: Long = 0,
     val failures: Long = 0,
     val startedAt: Long = 0,
+    val peers: List<PeerState> = emptyList(),
 ) {
     val running
         get() = phase == "running"
@@ -52,6 +71,7 @@ class Socks5Service : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val operations = Mutex()
     private var monitor: Job? = null
+    private var network: android.net.ConnectivityManager.NetworkCallback? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -79,7 +99,9 @@ class Socks5Service : Service() {
                 val failure =
                     validation
                         ?: withContext(Dispatchers.IO) {
-                            runCatching { NativeBridge.start(config.nativeJson()) }
+                            runCatching {
+                                    NativeBridge.start(config.nativeJson(resolvers(null)))
+                                }
                                 .getOrElse { it.message ?: "Unable to load the proxy engine" }
                                 .ifEmpty { null }
                         }
@@ -91,7 +113,14 @@ class Socks5Service : Service() {
                 }
                 ProxyStatus.mutable.value =
                     ProxyState(phase = "running", startedAt = System.currentTimeMillis())
-                showNotification("Listening on port ${config.port}")
+                showNotification(
+                    listOfNotNull(
+                            "SOCKS5 on port ${config.port}".takeIf { config.socks },
+                            "WireGuard on port ${config.wgPort}".takeIf { config.wg },
+                        )
+                        .joinToString(" · ")
+                )
+                if (config.wg) followResolvers()
                 monitor?.cancel()
                 monitor = scope.launch {
                     while (isActive) {
@@ -117,6 +146,7 @@ class Socks5Service : Service() {
                                 uploaded = snapshot.optLong("uploaded"),
                                 downloaded = snapshot.optLong("downloaded"),
                                 failures = snapshot.optLong("failures"),
+                                peers = peers(snapshot),
                             )
                     }
                 }
@@ -125,21 +155,88 @@ class Socks5Service : Service() {
         return START_STICKY
     }
 
+    private fun peers(snapshot: JSONObject): List<PeerState> {
+        val array = snapshot.optJSONArray("peers") ?: return emptyList()
+        return (0 until array.length()).map { index ->
+            val o = array.getJSONObject(index)
+            PeerState(
+                publicKey = o.optString("public_key"),
+                endpoint = o.optString("endpoint"),
+                handshakeAge = o.optLong("handshake_age", -1),
+                received = o.optLong("received"),
+                sent = o.optLong("sent"),
+            )
+        }
+    }
+
+    /** The DNS servers of [properties], or of the active network when null. */
+    private fun resolvers(properties: android.net.LinkProperties?): List<String> {
+        val manager = getSystemService(android.net.ConnectivityManager::class.java)
+        val link =
+            properties
+                ?: runCatching { manager.getLinkProperties(manager.activeNetwork) }.getOrNull()
+        // Link-local resolvers need an interface scope the engine cannot express.
+        return link
+            ?.dnsServers
+            .orEmpty()
+            .filter { !it.isLinkLocalAddress && !it.isLoopbackAddress }
+            .mapNotNull { it.hostAddress }
+    }
+
+    // Tunnel clients ask this phone for DNS, so keep up when Wi-Fi and mobile data swap.
+    private fun followResolvers() {
+        stopFollowingResolvers()
+        val callback =
+            object : android.net.ConnectivityManager.NetworkCallback() {
+                override fun onLinkPropertiesChanged(
+                    network: android.net.Network,
+                    linkProperties: android.net.LinkProperties,
+                ) {
+                    val servers = resolvers(linkProperties).joinToString(",")
+                    if (servers.isNotEmpty())
+                        scope.launch(Dispatchers.IO) { NativeBridge.setDns(servers) }
+                }
+            }
+        runCatching {
+                getSystemService(android.net.ConnectivityManager::class.java)
+                    .registerDefaultNetworkCallback(callback)
+                network = callback
+            }
+    }
+
+    private fun stopFollowingResolvers() {
+        network?.let {
+            runCatching {
+                getSystemService(android.net.ConnectivityManager::class.java)
+                    .unregisterNetworkCallback(it)
+            }
+        }
+        network = null
+    }
+
     private suspend fun stopProxy() {
+        stopFollowingResolvers()
         monitor?.cancel()
         monitor = null
         ProxyStatus.mutable.value = ProxyStatus.state.value.copy(phase = "stopping")
         withContext(Dispatchers.IO) { NativeBridge.stop() }
         ProxyStatus.mutable.value =
-            ProxyStatus.state.value.copy(phase = "stopped", active = 0, error = null)
+            ProxyStatus.state.value.copy(
+                phase = "stopped",
+                active = 0,
+                error = null,
+                peers = emptyList(),
+            )
         stopForeground(STOP_FOREGROUND_REMOVE)
     }
 
     override fun onDestroy() {
+        stopFollowingResolvers()
         scope.cancel()
         // Stop joins only after cancelling all native sessions. No process exit.
         NativeBridge.stop()
-        ProxyStatus.mutable.value = ProxyStatus.state.value.copy(phase = "stopped", active = 0)
+        ProxyStatus.mutable.value =
+            ProxyStatus.state.value.copy(phase = "stopped", active = 0, peers = emptyList())
         super.onDestroy()
     }
 

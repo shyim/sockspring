@@ -39,14 +39,21 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 Rust tests exercise authentication success/failure, malformed requests, IPv4/IPv6
 and hostname connections, TCP half-close and byte counters, sustained one-way
 traffic, UDP payloads and source filtering, fragmented UDP rejection, UDP-over-TCP
-framing, occupied ports, shutdown, and restart. `native/src/main.rs` is a host CLI
-for integration testing with the same engine and JSON configuration.
+framing, occupied ports, shutdown, and restart. `native/tests/wireguard.rs` drives
+the WireGuard server with a real client (boringtun plus its own smoltcp stack):
+handshakes, unknown keys and wrong preshared keys, spoofed source addresses, large
+TCP transfers with half-close, refused destinations, UDP and source filtering, DNS on
+the tunnel address, ping, device-to-device traffic, and peer status. Tests that need
+IPv6 on the host or unprivileged ICMP sockets return early where those are missing.
+`native/src/main.rs` is a host CLI for integration testing with the same engine and
+JSON configuration.
 
 The Android service is not exported. Start/stop it through the UI or notification.
 On Android 17+, the first Start requests local-network access so other devices can
 connect. Denying it leaves the proxy stopped with an App permissions shortcut.
-Settings are editable while stopped. Credentials remain in app-private preferences;
-Android backup is disabled. SOCKS5 username/password authentication does not encrypt
+Settings are editable while stopped. Credentials and WireGuard keys, including the
+private keys generated for client devices so their QR codes can be shown again,
+remain in app-private preferences; Android backup is disabled. SOCKS5 username/password authentication does not encrypt
 traffic; use a trusted network or an encrypted tunnel where required.
 
 ## Performance testing
@@ -76,6 +83,20 @@ establish Android performance.
 
 - `app/src/main/java/de/shyim/sockspring`: Compose UI, preferences, and foreground service.
 - `native/src/lib.rs`: Tokio engine, SOCKS protocols, JNI lifecycle, atomic counters.
+- `native/src/wg.rs`: WireGuard server. boringtun does the Noise handshake and
+  transport encryption on one UDP socket. There is no TUN device and no `VpnService`:
+  decrypted TCP is terminated by an in-process smoltcp stack and re-originated with
+  the same outbound sockets SOCKS uses, so source binding and low-latency settings
+  apply. The destination is dialled before the client's SYN is answered, so refused
+  connections reach the client as resets. UDP gets one outbound socket per client
+  port, and ICMP echo uses unprivileged ping sockets.
+- Only DNS (port 53) is served on the tunnel address; queries go to the phone's
+  resolvers, which the service passes at start and updates when the network changes.
+  Loopback, multicast, and unspecified destinations are dropped. A device may only
+  send from its own tunnel addresses. Devices can reach each other through the tunnel.
+- WireGuard limits: 64 devices, 512 TCP flows, 1024 UDP flows. IP fragments,
+  datagrams larger than the tunnel MTU, and protocols other than TCP, UDP, and ICMP
+  echo are dropped. Devices are read at start, so adding or removing one needs a stop.
 - JNI is used only to start/stop and read counters. Traffic never crosses into Kotlin.
 - At most 512 concurrent sessions; bounded UDP queues and destination tables,
   handshake/connect/idle timeouts, and cancellation on shutdown.

@@ -76,6 +76,37 @@ class SettingsModel(application: Application) : AndroidViewModel(application) {
         showErrors = false
         return true
     }
+
+    /** Empty when the native engine cannot derive it, which blocks adding devices. */
+    val serverPublicKey by lazy {
+        runCatching { NativeBridge.publicKey(saved.wgPrivateKey) }.getOrDefault("")
+    }
+
+    // Devices are stored right away so a scanned configuration always matches the server.
+    private fun storePeers(peers: List<WgPeer>) {
+        saved = saved.copy(wgPeers = peers)
+        draft = draft.copy(wgPeers = peers)
+        saved.save(getApplication())
+    }
+
+    fun addPeer(name: String): WgPeer? {
+        val host = saved.nextPeerHost() ?: return null
+        val privateKey = AppConfig.randomKey()
+        val publicKey = runCatching { NativeBridge.publicKey(privateKey) }.getOrDefault("")
+        if (publicKey.isEmpty() || serverPublicKey.isEmpty()) return null
+        val peer =
+            WgPeer(
+                name = name.trim().take(40).ifEmpty { "Device ${host - 1}" },
+                privateKey = privateKey,
+                publicKey = publicKey,
+                presharedKey = AppConfig.randomKey(),
+                host = host,
+            )
+        storePeers(saved.wgPeers + peer)
+        return peer
+    }
+
+    fun removePeer(peer: WgPeer) = storePeers(saved.wgPeers - peer)
 }
 
 @Composable
@@ -118,7 +149,7 @@ private fun SocksTheme(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun Glyph(id: Int, description: String? = null, modifier: Modifier = Modifier) {
+internal fun Glyph(id: Int, description: String? = null, modifier: Modifier = Modifier) {
     Icon(painterResource(id), description, modifier.size(24.dp))
 }
 
@@ -169,6 +200,12 @@ private fun SocksApp(model: SettingsModel = viewModel()) {
                 NavigationBarItem(
                     selected = tab == 1,
                     onClick = { tab = 1 },
+                    icon = { Glyph(R.drawable.ic_devices) },
+                    label = { Text("Devices") },
+                )
+                NavigationBarItem(
+                    selected = tab == 2,
+                    onClick = { tab = 2 },
                     icon = { Glyph(R.drawable.ic_settings) },
                     label = { Text("Settings") },
                 )
@@ -185,8 +222,17 @@ private fun SocksApp(model: SettingsModel = viewModel()) {
                     model.saved,
                     Modifier.widthIn(max = 640.dp).fillMaxWidth(),
                     onToggle = { if (state.running) Socks5Service.stop(context) else start() },
-                    onSettings = { tab = 1 },
+                    onSettings = { tab = 2 },
+                    onDevices = { tab = 1 },
                     onCopy = { scope.launch { snackbar.showSnackbar("Proxy address copied") } },
+                )
+            else if (tab == 1)
+                DevicesScreen(
+                    model,
+                    state,
+                    Modifier.widthIn(max = 640.dp).fillMaxWidth(),
+                    onSettings = { tab = 2 },
+                    onMessage = { scope.launch { snackbar.showSnackbar(it) } },
                 )
             else
                 SettingsScreen(model, state, Modifier.widthIn(max = 640.dp).fillMaxWidth()) {
@@ -203,6 +249,7 @@ private fun Overview(
     modifier: Modifier,
     onToggle: () -> Unit,
     onSettings: () -> Unit,
+    onDevices: () -> Unit,
     onCopy: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -300,6 +347,9 @@ private fun Overview(
                 )
                 Text(
                     if (state.running) "Your devices can now connect through this phone."
+                    else if (config.wg && config.socks)
+                        "Start your SOCKS5 proxy and WireGuard server in one tap."
+                    else if (config.wg) "Turn your phone into a WireGuard server in one tap."
                     else "Turn your phone into a SOCKS5 proxy in one tap.",
                     style = MaterialTheme.typography.bodyLarge,
                 )
@@ -364,6 +414,49 @@ private fun Overview(
         }
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             SectionLabel("CONNECT YOUR DEVICES")
+            if (config.wg) {
+                val wgHost = config.wgEndpoint.ifBlank { host.orEmpty() }
+                val connected = state.peers.count { it.connected }
+                Surface(
+                    onClick = onDevices,
+                    shape = RoundedCornerShape(28.dp),
+                    color = colors.surfaceContainer,
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(20.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "WireGuard endpoint",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = colors.onSurfaceVariant,
+                            )
+                            Text(
+                                if (wgHost.isEmpty()) "No local network"
+                                else if (':' in wgHost) "[$wgHost]:${config.wgPort}"
+                                else "$wgHost:${config.wgPort}",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                when {
+                                    config.wgPeers.isEmpty() -> "Add a device to get its QR code."
+                                    state.running ->
+                                        "$connected of ${config.wgPeers.size} devices connected"
+                                    config.wgPeers.size == 1 -> "1 device set up"
+                                    else -> "${config.wgPeers.size} devices set up"
+                                },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = colors.onSurfaceVariant,
+                            )
+                        }
+                        Glyph(R.drawable.ic_chevron)
+                    }
+                }
+            }
+            if (config.socks)
             Surface(shape = RoundedCornerShape(28.dp), color = colors.surfaceContainer) {
                 Column(
                     Modifier.fillMaxWidth().padding(20.dp),
@@ -533,7 +626,7 @@ private fun Metric(title: String, value: String, icon: Int, modifier: Modifier, 
 }
 
 @Composable
-private fun SectionLabel(text: String) {
+internal fun SectionLabel(text: String) {
     Text(
         text,
         style = MaterialTheme.typography.labelMedium,
@@ -596,6 +689,21 @@ private fun SettingsScreen(
                 )
             }
         SettingsGroup("SERVER") {
+            Toggle(
+                "SOCKS5 proxy",
+                "For apps and devices with a proxy setting",
+                c.socks,
+                enabled,
+            ) {
+                model.draft = c.copy(socks = it)
+            }
+            errors["socks"]?.let {
+                Text(
+                    it,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
             Field(
                 "Listen address",
                 c.listen,
@@ -620,6 +728,42 @@ private fun SettingsScreen(
                 enabled,
             ) {
                 model.draft = c.copy(autoStart = it)
+            }
+        }
+        SettingsGroup("WIREGUARD") {
+            Toggle(
+                "WireGuard server",
+                "Route a whole device through this phone with the WireGuard app",
+                c.wg,
+                enabled,
+            ) {
+                model.draft = c.copy(wg = it)
+            }
+            AnimatedVisibility(c.wg) {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Field(
+                        "WireGuard port",
+                        c.wgPort,
+                        { model.draft = c.copy(wgPort = it) },
+                        enabled,
+                        errors["wgPort"],
+                        "UDP port your devices connect to",
+                        number = true,
+                    )
+                    Field(
+                        "Endpoint host",
+                        c.wgEndpoint,
+                        { model.draft = c.copy(wgEndpoint = it) },
+                        enabled,
+                        errors["wgEndpoint"],
+                        "Leave empty to use this phone's local address",
+                    )
+                    Text(
+                        "Add your devices on the Devices tab. They need a new QR code after you change the port, endpoint, or tunnel address.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
         SettingsGroup("ACCESS") {
@@ -694,7 +838,7 @@ private fun SettingsScreen(
                 Column(Modifier.weight(1f)) {
                     Text("Advanced networking", fontWeight = FontWeight.SemiBold)
                     Text(
-                        "UDP, source addresses and interfaces",
+                        "UDP, source addresses, interfaces and tunnel options",
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
@@ -744,11 +888,38 @@ private fun SettingsScreen(
                 Toggle("IPv6 only", "Disable IPv4 on an IPv6 listener", c.ipv6Only, enabled) {
                     model.draft = c.copy(ipv6Only = it)
                 }
+                if (c.wg) {
+                    Field(
+                        "WireGuard tunnel address",
+                        c.wgAddress,
+                        { model.draft = c.copy(wgAddress = it) },
+                        enabled,
+                        errors["wgAddress"],
+                        "Change it if 10.77.0.x is already used on your network",
+                    )
+                    Field(
+                        "WireGuard client DNS",
+                        c.wgDns,
+                        { model.draft = c.copy(wgDns = it) },
+                        enabled,
+                        errors["wgDns"],
+                        "Leave empty to use this phone's DNS servers",
+                    )
+                    Field(
+                        "WireGuard MTU",
+                        c.wgMtu,
+                        { model.draft = c.copy(wgMtu = it) },
+                        enabled,
+                        errors["wgMtu"],
+                        "1420 suits most networks",
+                        number = true,
+                    )
+                }
             }
         }
         if (model.showErrors && errors.isNotEmpty())
             Text(
-                "Check the highlighted settings${if(!advanced && errors.keys.any{it in listOf("udpListen","udpPort","bindV4","bindV6","interface")}) " in Advanced networking" else ""}.",
+                "Check the highlighted settings${if(!advanced && errors.keys.any{it in listOf("udpListen","udpPort","bindV4","bindV6","interface","wgAddress","wgDns","wgMtu")}) " in Advanced networking" else ""}.",
                 color = MaterialTheme.colorScheme.error,
             )
         Button(
@@ -775,7 +946,7 @@ private fun SettingsScreen(
         TextButton(onClick = { document = "privacy.txt" }) { Text("Privacy policy") }
         TextButton(onClick = { document = "notices.txt" }) { Text("Open-source notices") }
         Text(
-            "Sockspring ${BuildConfig.VERSION_NAME}\nTCP · UDP · UDP over TCP",
+            "Sockspring ${BuildConfig.VERSION_NAME}\nTCP · UDP · UDP over TCP · WireGuard",
             modifier = Modifier.align(Alignment.CenterHorizontally),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -862,7 +1033,7 @@ private fun Toggle(
     }
 }
 
-private fun bytes(n: Long): String {
+internal fun bytes(n: Long): String {
     return when {
         n < 1024 -> "$n B"
         n < 1024 * 1024 -> String.format(Locale.ROOT, "%.1f KB", n / 1024.0)
@@ -878,7 +1049,7 @@ private fun elapsed(start: Long): String {
     else "${seconds/3600}h ${seconds%3600/60}m online"
 }
 
-private fun localAddresses(config: AppConfig): List<String> {
+internal fun localAddresses(config: AppConfig): List<String> {
     if (config.listen !in listOf("::", "0.0.0.0")) return listOf(config.listen)
     return runCatching {
             NetworkInterface.getNetworkInterfaces()

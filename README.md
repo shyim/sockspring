@@ -5,7 +5,7 @@
 <h1 align="center">Sockspring</h1>
 
 <p align="center">
-  A SOCKS5 proxy server for Android.<br>
+  A SOCKS5 proxy and WireGuard server for Android.<br>
   Built with Material 3 Expressive and a native Rust engine.
 </p>
 
@@ -18,7 +18,7 @@
 
 ---
 
-Sockspring turns your Android device into a proxy for your other devices. Start the server, copy its address, and connect a SOCKS5-compatible client. A clear dashboard keeps connections and traffic visible, with a Stop action always available in the app and its ongoing notification.
+Sockspring turns your Android device into a proxy for your other devices. Start the server, copy its address, and connect a SOCKS5-compatible client, or scan a QR code with the WireGuard app to send a whole device through your phone. A clear dashboard keeps connections and traffic visible, with a Stop action always available in the app and its ongoing notification.
 
 **Android 7.0+ · No ads · No analytics · No app account · MIT licensed**
 
@@ -26,7 +26,7 @@ Sockspring turns your Android device into a proxy for your other devices. Start 
 
 Sockspring is my escape hatch when traveling. I want reliable internet for my laptop and other devices without hunting for Wi-Fi. An unlimited travel eSIM can cover my phone, while hotspot limits make sharing that connection harder.
 
-I built Sockspring to give my other devices another way to use that connection: a SOCKS5 proxy running on my phone. It is a small, practical tool for working around hotspot limitations with compatible clients. Your devices still need a network connection to the phone, and what works depends on the eSIM plan and carrier.
+I built Sockspring to give my other devices another way to use that connection: a SOCKS5 proxy and a WireGuard server running on my phone, without root. It is a small, practical tool for working around hotspot limitations with compatible clients. Your devices still need a network connection to the phone, and what works depends on the eSIM plan and carrier.
 
 ## A closer look
 
@@ -50,6 +50,7 @@ I built Sockspring to give my other devices another way to use that connection: 
 | Light and dark themes | Configurable listening address and port |
 | Ongoing notification with a Stop action | Low-latency TCP option using TCP_NODELAY |
 | Optional startup after reboot | Advanced source binding, workers, and UDP-over-TCP support |
+| QR codes for the WireGuard app | Built-in WireGuard server, no root or system VPN needed |
 
 ## Getting started
 
@@ -70,17 +71,32 @@ Replace `PHONE_ADDRESS` with the address shown in the app. Wi-Fi client isolatio
 
 To change the port, enable authentication, or adjust advanced networking options, stop the proxy and open **Settings**.
 
+### WireGuard
+
+SOCKS5 only helps apps that have a proxy setting. The built-in WireGuard server carries all traffic of a device instead.
+
+1. In **Settings**, turn on **WireGuard server** and save.
+2. On the **Devices** tab, tap **Add device** and name it.
+3. Scan the QR code with the [WireGuard app](https://www.wireguard.com/install/) on the other device, or copy the configuration into a `.conf` file.
+4. Start the proxy and activate the tunnel on the other device.
+
+The default port is UDP `51820`. Each device gets its own key and tunnel address, and a device needs a new QR code after you change the WireGuard port, endpoint host, or tunnel address. If the other device reaches your phone through a public address or port forward, enter that under **Endpoint host**.
+
+Sockspring runs WireGuard entirely inside the app. It does not create a VPN on the phone and needs no root: traffic from your devices leaves through ordinary app connections, exactly like SOCKS5 traffic. TCP, UDP, ping, and DNS through the phone's resolvers work; fragmented IP packets and protocols other than TCP, UDP, and ICMP echo are not forwarded.
+
 ## Privacy and security
 
 Settings stay in app-private storage, and Android backup is disabled. Sockspring has no advertising, analytics, or publisher-operated proxy backend. Network requests go to the destinations your clients choose. Read the full [privacy policy](PRIVACY.md) for details.
 
 **SOCKS5 does not encrypt traffic or proxy passwords.** Use a trusted network and enable authentication when appropriate. HTTPS and other end-to-end encrypted connections retain their own encryption through the proxy.
 
-Sockspring is a proxy server, not a VPN service. It does not provide remote proxy servers or automatically route all traffic from your devices.
+WireGuard encrypts traffic between your device and the phone only; beyond the phone it travels as it would from the phone itself. A WireGuard configuration contains that device's private key, so share it only with the device it is for. Remove a device on the **Devices** tab to revoke its access.
+
+Sockspring is not a VPN service. It does not provide remote servers, and it never routes the phone's own traffic anywhere.
 
 ## Development
 
-The Android interface is written in Kotlin with Jetpack Compose. A Rust/Tokio engine handles proxy traffic; JNI is used only for lifecycle control and statistics.
+The Android interface is written in Kotlin with Jetpack Compose. A Rust/Tokio engine handles proxy and WireGuard traffic; JNI is used only for lifecycle control and statistics.
 
 - [Development guide](docs/development.md) — toolchain, builds, tests, architecture, and benchmarking.
 - [Play release kit](distribution/play/README.md) — signing, store assets, and submission instructions.
@@ -98,3 +114,5 @@ Published by **Shyim**.
 ## License
 
 Released under the [MIT License](LICENSE).
+
+"WireGuard" is a registered trademark of Jason A. Donenfeld. Sockspring is an independent implementation and is not affiliated with or endorsed by the WireGuard project.

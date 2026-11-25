@@ -9,3 +9,5 @@ command -v cargo-ndk >/dev/null || { echo 'Install cargo-ndk: cargo install carg
 export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-Wl,-z,max-page-size=16384"
 cd native
 cargo ndk -t arm64-v8a -t armeabi-v7a -t x86 -t x86_64 --platform 24 -o "$output" build --release --lib --locked
+# boringtun also declares itself a cdylib; only the engine belongs in the APK.
+find "$output" -name '*.so' ! -name 'libsocks5_rs.so' -delete
